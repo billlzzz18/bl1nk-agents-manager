@@ -133,7 +133,9 @@ def build_run(root: Path, run_dir: Path) -> dict | None:
             try:
                 grading = json.loads(candidate.read_text())
             except (json.JSONDecodeError, OSError):
-                pass
+                # Ignore malformed/unreadable optional grading files and
+                # continue checking other candidate locations.
+                continue
             if grading:
                 break
 
