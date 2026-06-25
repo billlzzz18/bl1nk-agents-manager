@@ -39,10 +39,7 @@ impl MessageContent {
     pub fn from_string(role: MessageRole, content: &str) -> Self {
         // ลอง parse เป็น JSON array
         if let Ok(parsed) = serde_json::from_str::<Vec<ContentPart>>(content) {
-            return Self {
-                role,
-                content: parsed,
-            };
+            return Self { role, content: parsed };
         }
 
         // Fallback เป็น text
@@ -462,9 +459,7 @@ pub fn compact_tool_data(params: &CompactToolDataParams) -> Vec<MessageContent> 
                     }
 
                     if is_tool_result_part(part) {
-                        let tool_call_id = if let ContentPart::ToolResult { tool_call_id, .. } =
-                            part
-                        {
+                        let tool_call_id = if let ContentPart::ToolResult { tool_call_id, .. } = part {
                             tool_call_id.clone()
                         } else {
                             None
@@ -525,7 +520,7 @@ use crate::context::Message;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenBudget {
     pub max_tokens: u32,
-    pub warning_threshold_percent: u8,  // e.g., 80 = warn at 80%
+    pub warning_threshold_percent: u8, // e.g., 80 = warn at 80%
     pub eviction_strategy: EvictionStrategy,
 }
 
@@ -544,7 +539,7 @@ pub enum EvictionStrategy {
 impl Default for TokenBudget {
     fn default() -> Self {
         Self {
-            max_tokens: 100_000,  // ~400k tokens = 100k
+            max_tokens: 100_000, // ~400k tokens = 100k
             warning_threshold_percent: 80,
             eviction_strategy: EvictionStrategy::PriorityBased,
         }
@@ -583,19 +578,22 @@ pub struct ToolUseHistory {
 
 impl ToolUseHistory {
     pub fn new() -> Self {
-        Self { entries: HashMap::new() }
+        Self {
+            entries: HashMap::new(),
+        }
     }
 
     /// Record a tool call
     pub fn record_call(&mut self, tool_name: &str, timestamp: i64) {
-        let entry = self.entries.entry(tool_name.to_string()).or_insert(
-            ToolUseHistoryEntry {
+        let entry = self
+            .entries
+            .entry(tool_name.to_string())
+            .or_insert(ToolUseHistoryEntry {
                 tool_name: tool_name.to_string(),
                 call_count: 0,
                 last_called_timestamp: timestamp,
                 cached_result_available: false,
-            }
-        );
+            });
         entry.call_count += 1;
         entry.last_called_timestamp = timestamp;
     }
@@ -656,26 +654,26 @@ pub fn estimate_tokens(text: &str) -> u32 {
 }
 
 /// Compact messages based on budget (select important ones to keep)
-pub fn compact_messages_by_budget(
-    messages: &[Message],
-    budget: &TokenBudget,
-    _now_timestamp: i64,
-) -> Vec<Message> {
+pub fn compact_messages_by_budget(messages: &[Message], budget: &TokenBudget, _now_timestamp: i64) -> Vec<Message> {
     if messages.is_empty() {
         return vec![];
     }
 
     // Score each message by importance
-    let mut scored: Vec<(usize, i32)> = messages.iter().enumerate().map(|(i, msg)| {
-        let importance = match msg.role {
-            MessageRole::System => 100,
-            MessageRole::User => 80,
-            MessageRole::Assistant => 60,
-        };
-        // Prefer recent messages (higher score = more recent)
-        let recency = (i as i32) / (messages.len() as i32) * 20;
-        (i, importance + recency)
-    }).collect();
+    let mut scored: Vec<(usize, i32)> = messages
+        .iter()
+        .enumerate()
+        .map(|(i, msg)| {
+            let importance = match msg.role {
+                MessageRole::System => 100,
+                MessageRole::User => 80,
+                MessageRole::Assistant => 60,
+            };
+            // Prefer recent messages (higher score = more recent)
+            let recency = (i as i32) / (messages.len() as i32) * 20;
+            (i, importance + recency)
+        })
+        .collect();
 
     // Sort by importance descending
     scored.sort_by(|a, b| b.1.cmp(&a.1));
@@ -717,19 +715,23 @@ pub fn offload_messages_to_archive(
     let keep_count = messages.len() - config.max_archived_messages;
     let (keep, archive_raw) = messages.split_at(keep_count);
 
-    let archived: Vec<ArchivedMessage> = archive_raw.iter().enumerate().map(|(i, msg)| {
-        let role_str = match msg.role {
-            MessageRole::User => "user",
-            MessageRole::Assistant => "assistant", 
-            MessageRole::System => "system",
-        };
-        ArchivedMessage {
-            role: role_str.to_string(),
-            content: msg.content.clone(),
-            original_index: keep_count + i,
-            archived_at_timestamp: now_timestamp,
-        }
-    }).collect();
+    let archived: Vec<ArchivedMessage> = archive_raw
+        .iter()
+        .enumerate()
+        .map(|(i, msg)| {
+            let role_str = match msg.role {
+                MessageRole::User => "user",
+                MessageRole::Assistant => "assistant",
+                MessageRole::System => "system",
+            };
+            ArchivedMessage {
+                role: role_str.to_string(),
+                content: msg.content.clone(),
+                original_index: keep_count + i,
+                archived_at_timestamp: now_timestamp,
+            }
+        })
+        .collect();
 
     (keep.to_vec(), archived)
 }

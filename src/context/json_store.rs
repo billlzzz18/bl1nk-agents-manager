@@ -10,7 +10,6 @@
 ///     ├── {uuid}.json   # workspace data
 ///     └── secrets/     # API keys (ไม่ git)
 /// ```
-
 use crate::context::{secrets_file_path, workspace_file_path, Secrets, Workspace, WORKSPACES_INDEX_FILE};
 use anyhow::{Context, Result};
 use std::path::PathBuf;
