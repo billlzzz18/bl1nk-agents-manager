@@ -1,9 +1,8 @@
-//! File Operations Tools (read, write, replace)
-//! พอร์ตจากมาตรฐาน Gemini CLI (v1.7.5.1)
+//! File operation tools (read, write, replace).
 
 use anyhow::{Context, Result};
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 

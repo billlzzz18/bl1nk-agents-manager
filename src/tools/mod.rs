@@ -1,6 +1,8 @@
-//! 🛠️ BL1NK Universal Toolset (v1.7.5.1)
+//! # Toolset
 //!
-//! โมดูลจัดการเครื่องมือมาตรฐานสำหรับเอเจนต์ รองรับทั้ง Gemini CLI และ KiloCode standards
+//! Standard tools exposed to agents and the Claude Code host. Each tool
+//! implements the [`AgentTool`] trait — a name, a description and a JSON
+//! `execute` entry point — so it can be surfaced uniformly over MCP.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -16,20 +18,20 @@ pub use ask_user_question::AskUserQuestionInput;
 pub use exit_plan_mode::ExitPlanModeHandler;
 pub use file_ops::FileOpsTools;
 
-/// Trait มาตรฐานสำหรับเครื่องมือของเอเจนต์
+/// Standard interface every agent tool implements.
 #[async_trait]
 pub trait AgentTool: Send + Sync {
-    /// ชื่อเครื่องมือ (เช่น "read_file" หรือ "write_file")
+    /// Tool name (e.g. "read_file" or "write_file").
     fn name(&self) -> &str;
-    
-    /// คำอธิบายความสามารถ
+
+    /// Human-readable description of what the tool does.
     fn description(&self) -> &str;
-    
-    /// รันเครื่องมือด้วย JSON input และคืนค่าเป็น JSON output
+
+    /// Run the tool with a JSON input and return a JSON output.
     async fn execute(&self, input: serde_json::Value) -> Result<serde_json::Value>;
 }
 
-/// ข้อมูลสรุปของเครื่องมือสำหรับส่งให้ Model
+/// Tool summary advertised to the model.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ToolDefinition {
     pub name: String,

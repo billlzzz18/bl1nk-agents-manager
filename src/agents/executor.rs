@@ -10,8 +10,8 @@ use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::RwLock;
 
-/// ตัวรันงานของเอเจนต์ (Agent Executor)
-/// รับผิดชอบวงจรชีวิตของงาน ตั้งแต่การเลือกเอเจนต์, ตรวจสอบสิทธิ์, รันงาน และบันทึกสถิติ
+/// Runs delegated tasks end to end: agent selection, policy checks, execution
+/// and behavioural stats recording.
 pub struct AgentExecutor {
     agent_registry: Arc<RwLock<AgentRegistry>>,
     rate_limiter: Arc<RwLock<RateLimitTracker>>,
@@ -40,7 +40,7 @@ impl AgentExecutor {
     }
 
     pub async fn delegate_task(&self, args: DelegateTaskArgs) -> Result<DelegateTaskOutput> {
-        // ... (1. Create Proposal omitted for context)
+        // 1. Route the task to the best-fit agent and build a proposal.
         let proposal = {
             let registry = self.agent_registry.read().await;
             self.router.route_task(&registry, &args.task_type, &args.prompt).await?
@@ -49,10 +49,8 @@ impl AgentExecutor {
         let task_id = proposal.task_id.clone();
         let agent_id = proposal.agent_id.clone();
 
-        // บันทึกการถูกเลือกเบื้องต้น (แต่ยังไม่นับเป็นความพึงพอใจจนกว่าจะ Approve)
-
-        // 2. ลงทะเบียน Task เข้าระบบสถานะ
-        // ...
+        // 2. Register the task. Selection is recorded now, but user satisfaction
+        //    is only credited once the task is approved.
         let task_info = TaskInfo {
             task_id: task_id.clone(),
             agent_id: agent_id.clone(),
@@ -72,9 +70,9 @@ impl AgentExecutor {
             registry.register_task(task_info);
         }
 
-        // 3. จัดการการรันงาน
+        // 3. Decide how to run.
         if args.interactive {
-            // ถ้าเป็นโหมด Interactive ให้หยุดรอการยืนยันจากผู้ใช้
+            // Interactive mode: pause and wait for user confirmation.
             Ok(DelegateTaskOutput {
                 task_id,
                 agent_id,
@@ -83,7 +81,7 @@ impl AgentExecutor {
                 proposal: Some(proposal),
             })
         } else {
-            // ถ้าไม่ใช่ ให้ดึงเอเจนต์และรันทันที
+            // Otherwise fetch the agent and execute immediately.
             let agent = {
                 let registry = self.agent_registry.read().await;
                 registry.get_agent(&agent_id).context("Agent not found")?.clone()
@@ -108,7 +106,7 @@ impl AgentExecutor {
         task_id: String,
         confirmed_agent_id: Option<String>,
     ) -> Result<DelegateTaskOutput> {
-        // ดึงข้อมูลงานเดิมที่ค้างอยู่
+        // Fetch the pending task.
         let (agent_id, prompt, context) = {
             let registry = self.agent_registry.read().await;
             let task = registry.get_task(&task_id).context("Task not found")?;
@@ -116,7 +114,7 @@ impl AgentExecutor {
             (final_agent_id, task.prompt.clone(), task.context.clone())
         };
 
-        // บันทึกความพึงพอใจของผู้ใช้ (User Approved)
+        // Record user satisfaction (the task was approved).
         {
             let mut weights = self.weight_registry.write().await;
             weights.record_user_interaction(&agent_id, true);
@@ -139,7 +137,7 @@ impl AgentExecutor {
         })
     }
 
-    /// รันงานภายใน พร้อมระบบความปลอดภัยและการลองใหม่ (Retry)
+    /// Internal execution with policy enforcement, rate limiting and retries.
     async fn execute_task_internal(
         &self,
         task_id: &str,
@@ -148,7 +146,7 @@ impl AgentExecutor {
         context: Option<Value>,
     ) -> Result<String> {
         // --- 🛡️ POLICY ENFORCEMENT LAYER ---
-        // ตรวจสอบว่าเอเจนต์มีสิทธิ์ใช้เครื่องมือตามกฎระเบียบ (Policy)
+        // Verify the agent is allowed to use the required tool.
         let tool_name = match agent.agent_type.as_str() {
             "cli" => "bash",
             "internal" => "system",
@@ -171,7 +169,7 @@ impl AgentExecutor {
                     agent.id,
                     tool_name
                 );
-                // ในเวอร์ชัน CLI ปัจจุบัน เราจะรันต่อแต่บันทึกคำเตือนไว้
+                // In the current CLI build we proceed but log the warning.
             }
             PolicyDecision::Allow => {}
         }
@@ -224,7 +222,7 @@ impl AgentExecutor {
                     registry.update_task_status(task_id, TaskStatus::Failed)?;
                     weights.record_result(&agent.id, false);
 
-                    // ถ้าพยายามครบ 3 ครั้งแล้วยังล้มเหลว บันทึกเป็น Violation
+                    // Record a violation if all 3 attempts failed.
                     if attempts >= 3 {
                         weights.record_violation(&agent.id, ViolationType::HiddenError);
                         tracing::error!("❌ Behavioral Violation: Agent '{}' failed after 3 attempts.", agent.id);
@@ -232,7 +230,7 @@ impl AgentExecutor {
                     tracing::error!("Task failed: {}", e);
                 }
             }
-            // บันทึกสถิติลงไฟล์ Persistence
+            // Persist the updated stats to disk.
             let _ = weights.save().await;
         }
 

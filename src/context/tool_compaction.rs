@@ -659,7 +659,7 @@ pub fn estimate_tokens(text: &str) -> u32 {
 pub fn compact_messages_by_budget(
     messages: &[Message],
     budget: &TokenBudget,
-    now_timestamp: i64,
+    _now_timestamp: i64,
 ) -> Vec<Message> {
     if messages.is_empty() {
         return vec![];

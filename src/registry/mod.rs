@@ -1,3 +1,12 @@
+//! # Unified Registry & Policy System
+//!
+//! The central store of agent metadata and the rules that govern them.
+//!
+//! - [`schema`] — serde definitions for agents and performance reports.
+//! - `RegistryService` — fuzzy and capability-based smart search over agents.
+//! - `PolicyEvaluator` — checks tool access (e.g. Bash, Write) against agent policies.
+//! - `WeightRegistry` — records behavioural stats to compute per-agent trust weights.
+
 pub mod schema;
 
 use crate::registry::schema::Registry;
@@ -8,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 
-/// โหลดและคอมไพล์ Capability Schema (v1.7.5)
+/// Loads and compiles the capability JSON schema used to validate agents.
 static CAPABILITY_SCHEMA: Lazy<Option<JSONSchema>> = Lazy::new(|| {
     let schema_path = "config/v1.7/capability-schema.json";
     if let Ok(content) = fs::read_to_string(schema_path) {
