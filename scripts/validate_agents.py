@@ -63,13 +63,21 @@ def main():
         errs = validate_md_file(f, cap_schema)
         if errs: all_errors.extend(errs)
 
-    # 4. Validate Skills Frontmatter
+    # 4. Validate Skills Frontmatter.
+    # Skills are a distinct asset type from agents: their frontmatter carries
+    # only the universal capability fields (`name`, `description`). `mode` and
+    # `tool` are agent concepts that do not apply to skills, so validate skills
+    # against a relaxed copy of the capability schema.
     print("  - Checking skill capabilities (SKILL.md)...")
+    skill_schema = dict(cap_schema)
+    skill_schema["required"] = [
+        r for r in cap_schema.get("required", []) if r not in ("mode", "tool")
+    ]
     if os.path.exists('skills'):
         for skill_dir in os.listdir('skills'):
             skill_file = os.path.join('skills', skill_dir, 'SKILL.md')
             if os.path.exists(skill_file):
-                errs = validate_md_file(skill_file, cap_schema)
+                errs = validate_md_file(skill_file, skill_schema)
                 if errs: all_errors.extend(errs)
 
     # Final Result
