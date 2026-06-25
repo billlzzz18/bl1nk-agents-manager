@@ -75,13 +75,13 @@ impl AgentRegistry {
 
     pub fn get_agents_by_priority(&self) -> Vec<&AgentConfig> {
         let mut states: Vec<&AgentState> = self.agents.values().collect();
-        states.sort_by(|a, b| b.config.priority.cmp(&a.config.priority));
+        states.sort_by_key(|b| std::cmp::Reverse(b.config.priority));
         states.into_iter().map(|s| &s.config).collect()
     }
 
     pub fn get_agents_sorted(&self) -> Vec<&AgentState> {
         let mut states: Vec<&AgentState> = self.agents.values().collect();
-        states.sort_by(|a, b| b.config.priority.cmp(&a.config.priority));
+        states.sort_by_key(|b| std::cmp::Reverse(b.config.priority));
         states
     }
 

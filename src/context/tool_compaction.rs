@@ -613,7 +613,7 @@ impl ToolUseHistory {
     /// Get all entries sorted by call count
     pub fn sorted_by_frequency(&self) -> Vec<&ToolUseHistoryEntry> {
         let mut entries: Vec<_> = self.entries.values().collect();
-        entries.sort_by(|a, b| b.call_count.cmp(&a.call_count));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.call_count));
         entries
     }
 }
@@ -676,7 +676,7 @@ pub fn compact_messages_by_budget(messages: &[Message], budget: &TokenBudget, _n
         .collect();
 
     // Sort by importance descending
-    scored.sort_by(|a, b| b.1.cmp(&a.1));
+    scored.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     // Calculate token budget for messages (reserve some for metadata)
     let message_budget = (budget.max_tokens as f64 * 0.8) as u32;
@@ -697,7 +697,7 @@ pub fn compact_messages_by_budget(messages: &[Message], budget: &TokenBudget, _n
     }
 
     // Sort back to original order
-    selected.sort_by(|a, b| a.0.cmp(&b.0));
+    selected.sort_by_key(|a| a.0);
     selected.into_iter().map(|(_, msg)| msg).collect()
 }
 
