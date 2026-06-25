@@ -1,3 +1,9 @@
+//! # Configuration
+//!
+//! Loads the orchestrator config (TOML), auto-discovers agents from the
+//! `agents/` and `skills/` directories, and validates the result before the
+//! server starts.
+
 use crate::system::skill_discovery;
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -34,7 +40,7 @@ pub struct MainAgentConfig {
     pub agent_type: String,
 }
 
-/// ข้อมูลส่วนหัวจากไฟล์ .md (Frontmatter)
+/// Frontmatter header parsed from an agent's `.md` file.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentMdHeader {
     pub name: String,
@@ -43,8 +49,11 @@ pub struct AgentMdHeader {
     pub tool: Vec<String>,
 }
 
-/// โครงสร้างเอเจนต์ตามมาตรฐาน Gemini CLI Policy Engine (v1.7.5)
-/// ปรับปรุงระบบ Source และ Nested Policies
+/// An agent definition following the tiered policy-engine standard.
+///
+/// Permissions are stored as a nested map (`policies: tool -> decision`) for
+/// O(1) lookup, and `tier`/`priority` place each agent in the governance
+/// hierarchy (Tier 1-5, Priority 0-999).
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentConfig {
     pub id: String,
@@ -56,7 +65,7 @@ pub struct AgentConfig {
     pub agent_type: String,
     pub capabilities: Vec<String>,
 
-    // มาตรฐานสิทธิ์แบบลำดับชั้น (Object-based)
+    // Tiered, object-based permissions.
     pub tier: u8,                          // 1-5
     pub priority: u16,                     // 0-999
     pub policies: HashMap<String, String>, // mapping: "tool_name" -> "decision"
@@ -64,7 +73,7 @@ pub struct AgentConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
 
-    // ฟิลด์ทางเทคนิคที่จำเป็น
+    // Technical fields required to launch/track the agent.
     #[serde(default = "default_command")]
     pub command: String,
     #[serde(default)]

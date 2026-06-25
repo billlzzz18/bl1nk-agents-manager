@@ -20,27 +20,33 @@ pub struct ExitPlanOutput {
     pub message: String,
 }
 
-/// ตัวจัดการเครื่องมือ ExitPlanMode
-/// แปลงมาจาก TypeScript Implementation เพื่อความปลอดภัยและเสถียรภาพใน Rust
+/// Handler for the ExitPlanMode tool.
 pub struct ExitPlanModeHandler;
+
+impl Default for ExitPlanModeHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ExitPlanModeHandler {
     pub fn new() -> Self {
         Self
     }
 
-    /// รันการเปลี่ยนโหมดอย่างปลอดภัย (เทียบเท่า setApprovalModeSafely)
+    /// Safely transition the approval mode (equivalent to `setApprovalModeSafely`).
     pub async fn execute(&self, args: ExitPlanArgs) -> Result<ExitPlanOutput> {
-        debug!("🛠️ [EXIT_PLAN_MODE] Closing plan mode. Summary length: {}", args.plan_summary.len());
+        debug!(
+            "🛠️ [EXIT_PLAN_MODE] Closing plan mode. Summary length: {}",
+            args.plan_summary.len()
+        );
 
-        // การจัดการความปลอดภัยในการเปลี่ยนสถานะ (Safety Layer)
+        // Safety layer around the state transition.
         match self.update_runtime_state(&args.next_mode).await {
-            Ok(_) => {
-                Ok(ExitPlanOutput {
-                    success: true,
-                    message: format!("✅ แผนงานได้รับการบันทึกแล้ว: {}", args.plan_summary),
-                })
-            }
+            Ok(_) => Ok(ExitPlanOutput {
+                success: true,
+                message: format!("✅ แผนงานได้รับการบันทึกแล้ว: {}", args.plan_summary),
+            }),
             Err(e) => {
                 error!("❌ [EXIT_PLAN_MODE] Safety check failed: {}", e);
                 Ok(ExitPlanOutput {
@@ -52,7 +58,7 @@ impl ExitPlanModeHandler {
     }
 
     async fn update_runtime_state(&self, _mode: &Option<String>) -> Result<()> {
-        // TODO: เชื่อมต่อกับระบบจัดการสถานะของเอเจนต์หลัก
+        // TODO: wire this into the main agent's state-management system.
         Ok(())
     }
 }
