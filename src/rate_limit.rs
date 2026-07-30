@@ -1,4 +1,9 @@
-use crate::config::{RateLimit, RateLimitingConfig}; // เพิ่ม RateLimit เข้ามา
+//! # Rate Limiting
+//!
+//! Tracks per-agent request usage against per-minute / per-day budgets and
+//! persists counters so limits survive restarts.
+
+use crate::config::{RateLimit, RateLimitingConfig};
 use crate::persistence::{Persistence, StorageLocation};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};

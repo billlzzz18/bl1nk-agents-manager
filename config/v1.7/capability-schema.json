@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/capability-spec.schema.json",
+  "title": "Agent Capability Specification",
+  "description": "Schema for validating agent frontmatter (.md files) - Universal v1.7.5.1",
+  "version": "1.7.5.1",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9\\-]+$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["all", "primary", "subagent"]
+    },
+    "tool": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "required": ["name", "description", "mode", "tool"],
+  "additionalProperties": true
+}

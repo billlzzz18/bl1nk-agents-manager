@@ -1,6 +1,13 @@
+//! # Configuration
+//!
+//! Loads the orchestrator config (TOML), auto-discovers agents from the
+//! `agents/` and `skills/` directories, and validates the result before the
+//! server starts.
+
 use crate::system::skill_discovery;
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -33,7 +40,7 @@ pub struct MainAgentConfig {
     pub agent_type: String,
 }
 
-/// ข้อมูลส่วนหัวจากไฟล์ .md (Frontmatter)
+/// Frontmatter header parsed from an agent's `.md` file.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentMdHeader {
     pub name: String,
@@ -42,25 +49,31 @@ pub struct AgentMdHeader {
     pub tool: Vec<String>,
 }
 
-/// โครงสร้างเอเจนต์สมบูรณ์ (รักษาฟิลด์เดิมไว้เพื่อความปลอดภัย)
+/// An agent definition following the tiered policy-engine standard.
+///
+/// Permissions are stored as a nested map (`policies: tool -> decision`) for
+/// O(1) lookup, and `tier`/`priority` place each agent in the governance
+/// hierarchy (Tier 1-5, Priority 0-999).
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentConfig {
     pub id: String,
     pub name: String,
+    pub version: String,
     pub description: String,
     pub mode: String,
     #[serde(rename = "type")]
     pub agent_type: String,
-    pub model: String,
     pub capabilities: Vec<String>,
-    pub priority: u8,
+
+    // Tiered, object-based permissions.
+    pub tier: u8,                          // 1-5
+    pub priority: u16,                     // 0-999
+    pub policies: HashMap<String, String>, // mapping: "tool_name" -> "decision"
+
     #[serde(default = "default_true")]
     pub enabled: bool,
-    pub tool: AgentToolPermissions,
-    pub permission: u32,
-    pub permission_policy: serde_json::Value,
 
-    // ฟิลด์ทางเทคนิคที่จำเป็น (รักษาไว้เพื่อให้โค้ดส่วนอื่นไม่พัง)
+    // Technical fields required to launch/track the agent.
     #[serde(default = "default_command")]
     pub command: String,
     #[serde(default)]
@@ -73,14 +86,6 @@ pub struct AgentConfig {
     pub cost: u16,
     #[serde(default)]
     pub rate_limit: RateLimit,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct AgentToolPermissions {
-    pub bash: bool,
-    pub write: bool,
-    pub skill: bool,
-    pub ask: bool,
 }
 
 fn default_true() -> bool {
@@ -144,21 +149,15 @@ impl Config {
                 AgentConfig {
                     id: meta.name.clone(),
                     name: meta.name,
+                    version: e.version.clone(),
                     description: meta.description,
                     mode: meta.options.mode.clone(),
                     agent_type: e.agent_type.clone(),
-                    model: e.model.clone(),
                     capabilities: e.capabilities.clone(),
-                    priority: if e.permission > 500 { 90 } else { 50 },
+                    tier: e.tier,
+                    priority: e.priority,
+                    policies: e.policies.tools.clone(),
                     enabled: true,
-                    tool: AgentToolPermissions {
-                        bash: e.tool_permissions.bash,
-                        write: e.tool_permissions.write,
-                        skill: e.tool_permissions.skill,
-                        ask: e.tool_permissions.ask,
-                    },
-                    permission: e.permission,
-                    permission_policy: e.permission_policy.clone(),
                     command: "true".into(),
                     args: None,
                     extension_name: None,
@@ -167,24 +166,22 @@ impl Config {
                     rate_limit: RateLimit::default(),
                 }
             } else {
+                let mut default_policies = HashMap::new();
+                default_policies.insert("skill".to_string(), "allow".to_string());
+                default_policies.insert("ask".to_string(), "allow".to_string());
+
                 AgentConfig {
                     id: meta.name.clone(),
                     name: meta.name,
+                    version: "1.0.0".to_string(),
                     description: meta.description,
                     mode: meta.options.mode.clone(),
                     agent_type: "general".into(),
-                    model: "sonnet".into(),
                     capabilities: vec![meta.filename],
-                    priority: 50,
+                    tier: 2,
+                    priority: 100,
+                    policies: default_policies,
                     enabled: true,
-                    tool: AgentToolPermissions {
-                        bash: false,
-                        write: false,
-                        skill: true,
-                        ask: true,
-                    },
-                    permission: 100,
-                    permission_policy: serde_json::json!({"hierarchy": ["default"]}),
                     command: "true".into(),
                     args: None,
                     extension_name: None,

@@ -1,5 +1,6 @@
-use crate::config::{AgentConfig, AgentToolPermissions, RateLimit};
+use crate::config::{AgentConfig, RateLimit};
 use anyhow::Result;
+use std::collections::HashMap;
 use std::path::Path;
 
 pub struct DiscoveryEngine;
@@ -16,24 +17,23 @@ impl DiscoveryEngine {
     pub fn parse_agent_file(path: &Path) -> Result<AgentConfig> {
         let slug = path.file_stem().unwrap().to_str().unwrap();
 
+        let mut default_policies = HashMap::new();
+        default_policies.insert("activate_skill".to_string(), "allow".to_string());
+        default_policies.insert("ask_user".to_string(), "allow".to_string());
+        default_policies.insert("run_shell_command".to_string(), "deny".to_string());
+
         Ok(AgentConfig {
             id: slug.to_string(),
             name: slug.to_string(),
-            description: "Legacy discovered agent".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Discovered agent (v1.7.5.1 Standard)".to_string(),
             mode: "subagent".to_string(),
             agent_type: "general".to_string(),
-            model: "sonnet".to_string(),
             capabilities: Vec::new(),
+            tier: 2,
             priority: 100,
+            policies: default_policies,
             enabled: true,
-            tool: AgentToolPermissions {
-                bash: false,
-                write: false,
-                skill: true,
-                ask: true,
-            },
-            permission: 100,
-            permission_policy: serde_json::json!({}),
             command: "true".to_string(),
             args: None,
             extension_name: None,

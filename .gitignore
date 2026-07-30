@@ -45,3 +45,6 @@ yarn-error.log*
 
 # Custom user agents
 custom/
+.git_backup/
+dist/
+\n# Hermes Conversation Logs\nhermes_conversation_*.json

@@ -1,3 +1,9 @@
+//! # Persistence
+//!
+//! Atomic JSON storage for durable state. Writes go to a temporary file and are
+//! renamed into place so a crash mid-write can never corrupt existing data.
+//! [`StorageLocation`] selects between global (`~/.bl1nk/`) and project-local paths.
+
 use anyhow::{Context, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use std::path::{Path, PathBuf};
@@ -19,7 +25,7 @@ impl Persistence {
                 let home = std::env::var("HOME")
                     .or_else(|_| std::env::var("USERPROFILE"))
                     .context("Could not find home directory")?;
-                PathBuf::from(home).join(".config/bl1nk-agents-manager")
+                PathBuf::from(home).join(".bl1nk")
             }
             StorageLocation::Local => PathBuf::from("."),
         };

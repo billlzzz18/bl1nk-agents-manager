@@ -1,3 +1,14 @@
+//! # MCP Surface
+//!
+//! The bridge between the Claude Code host and the agents inside this crate.
+//!
+//! - **Protocol** — Model Context Protocol over stdio (JSON-RPC 2.0).
+//! - **Typed tools** — agent capabilities are exposed as `delegate_task`,
+//!   `approve_task` and `agent_status`, each with a JSON schema the host model
+//!   can call directly.
+//! - **Orchestration** — [`Orchestrator`] owns the registry, executor and rate
+//!   limiter and mediates every request/response between host and sub-agents.
+
 use crate::agents::{AgentExecutor, AgentRegistry};
 use crate::config::Config;
 use crate::rate_limit::RateLimitTracker;
@@ -64,12 +75,12 @@ pub struct AgentStatusArgs {
     pub task_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AgentSummary {
     pub id: String,
     pub name: String,
     pub availability: String,
-    pub priority: u8,
+    pub priority: u16,
     pub cost: u16,
 }
 
@@ -82,12 +93,11 @@ pub struct AgentStatusOutput {
 
 impl Orchestrator {
     pub async fn new(config: Config, report: Option<crate::system::discovery::DiscoveryReport>) -> Result<Self> {
-        // โค้ดส่วนนี้ยังคงทำงานได้ถูกต้อง
-        // `config.agents` จะมี pmat-internal agent รวมอยู่ด้วย
-        // ถ้าเราแก้ไข `config.rs` ให้เพิ่มมันเข้าไปเมื่อเปิดฟีเจอร์ `bundle-pmat`
+        // `config.agents` already includes any bundled internal agents (e.g. the
+        // pmat agent injected by `config.rs` under the `bundle-pmat` feature).
         let agent_registry = Arc::new(RwLock::new(AgentRegistry::new(config.agents.clone(), report.as_ref())));
 
-        // สร้าง RegistryService เพื่อใช้ Smart Search
+        // RegistryService backs smart (fuzzy / capability) search over agents.
         let registry_path = "agents/agents.json";
         let registry_service = if std::path::Path::new(registry_path).exists() {
             crate::registry::RegistryService::from_file(registry_path)
@@ -103,7 +113,7 @@ impl Orchestrator {
         }
         let rate_limiter = Arc::new(RwLock::new(tracker));
 
-        // โหลดสถิตินโยบาย (Reputation Ledger) จากไฟล์กลาง
+        // Load the reputation ledger (per-agent trust weights) from disk.
         let weight_registry = Arc::new(RwLock::new(
             crate::registry::WeightRegistry::load()
                 .await
@@ -163,8 +173,8 @@ impl Orchestrator {
 
         // Build MCP server with typed tools
         let server = ServerBuilder::new()
-            .name("gemini-mcp-proxy")
-            .version("0.1.0")
+            .name(env!("CARGO_PKG_NAME"))
+            .version(env!("CARGO_PKG_VERSION"))
             // Tool: Delegate task to sub-agent
             .tool(
                 "delegate_task",

@@ -1,28 +1,38 @@
 //! Context Management Module
-//! 
+//!
 //! Provides data structures for managing conversation context, workspaces, and secrets.
-//! 
-//! ## Architecture
-//! 
-//! - `Conversation`: A single conversation/session with messages
-//! - `Workspace`: A workspace containing multiple conversations  
-//! - `Secrets`: Secure key-value storage for sensitive data
-//! - `ContextStore`: Trait for abstracting storage mechanisms
+//!
+//! ## Storage Structure
+//!
+//! **Global** (`~/.bl1nk/sessions/`):
+//! ```text
+//! ~/.bl1nk/sessions/
+//! ├── workspaces.json
+//! ├── {uuid}.json
+//! └── secrets/
+//! ```
+//!
+//! **Per-project** (`.bl1nk/`):
+//! ```text
+//! .bl1nk/
+//! ├── todo.md
+//! └── checkpoints/
+//! ```
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-/// Workspace metadata file stored at .omg/state/workspaces.json
+/// Workspace metadata file stored at ~/.bl1nk/sessions/workspaces.json
 pub const WORKSPACES_INDEX_FILE: &str = "workspaces.json";
 
-/// Workspace data stored at .omg/state/workspaces/{id}.json
+/// Workspace data stored at ~/.bl1nk/sessions/{id}.json (flat structure)
 pub fn workspace_file_path(id: Uuid) -> String {
-    format!("workspaces/{}.json", id)
+    format!("{}.json", id)
 }
 
-/// Secrets file stored at .omg/state/secrets/{id}.json
+/// Secrets file stored at ~/.bl1nk/sessions/secrets/{id}.json
 pub fn secrets_file_path(id: Uuid) -> String {
     format!("secrets/{}.json", id)
 }
@@ -175,12 +185,12 @@ mod tests {
     use super::*;
 
     // ========== Conversation Tests ==========
-    
+
     #[test]
     fn test_conversation_new() {
         let workspace_id = Uuid::new_v4();
         let conversation = Conversation::new(workspace_id);
-        
+
         assert_eq!(conversation.workspace_id, workspace_id);
         assert!(conversation.messages.is_empty());
         assert!(conversation.metadata.is_empty());
@@ -189,9 +199,9 @@ mod tests {
     #[test]
     fn test_conversation_add_message() {
         let mut conversation = Conversation::new(Uuid::new_v4());
-        
+
         conversation.add_message(MessageRole::User, "Hello".to_string());
-        
+
         assert_eq!(conversation.messages.len(), 1);
         assert_eq!(conversation.messages[0].role, MessageRole::User);
         assert_eq!(conversation.messages[0].content, "Hello");
@@ -200,11 +210,11 @@ mod tests {
     #[test]
     fn test_conversation_multiple_messages() {
         let mut conversation = Conversation::new(Uuid::new_v4());
-        
+
         conversation.add_message(MessageRole::User, "Hello".to_string());
         conversation.add_message(MessageRole::Assistant, "Hi there!".to_string());
         conversation.add_message(MessageRole::User, "How are you?".to_string());
-        
+
         assert_eq!(conversation.messages.len(), 3);
         assert_eq!(conversation.messages[0].role, MessageRole::User);
         assert_eq!(conversation.messages[1].role, MessageRole::Assistant);
@@ -215,19 +225,19 @@ mod tests {
     fn test_conversation_serialization() {
         let mut conversation = Conversation::new(Uuid::new_v4());
         conversation.add_message(MessageRole::User, "Test message".to_string());
-        
+
         let json = serde_json::to_string(&conversation).unwrap();
         let deserialized: Conversation = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(conversation, deserialized);
     }
 
     // ========== Workspace Tests ==========
-    
+
     #[test]
     fn test_workspace_new() {
         let workspace = Workspace::new("Test Workspace".to_string());
-        
+
         assert_eq!(workspace.name, "Test Workspace");
         assert!(workspace.conversations.is_empty());
         assert_eq!(workspace.created_at, workspace.updated_at);
@@ -238,9 +248,9 @@ mod tests {
         let mut workspace = Workspace::new("Test".to_string());
         let conversation = Conversation::new(workspace.id);
         let conversation_id = conversation.id;
-        
+
         workspace.add_conversation(conversation);
-        
+
         assert_eq!(workspace.conversations.len(), 1);
         assert!(workspace.conversations.contains_key(&conversation_id));
         assert!(workspace.updated_at >= workspace.created_at);
@@ -250,19 +260,19 @@ mod tests {
     fn test_workspace_serialization() {
         let mut workspace = Workspace::new("Test".to_string());
         workspace.add_conversation(Conversation::new(workspace.id));
-        
+
         let json = serde_json::to_string(&workspace).unwrap();
         let deserialized: Workspace = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(workspace, deserialized);
     }
 
     // ========== Secrets Tests ==========
-    
+
     #[test]
     fn test_secrets_new() {
         let secrets = Secrets::new();
-        
+
         assert!(secrets.entries.is_empty());
         assert!(!secrets.encrypted);
     }
@@ -270,9 +280,9 @@ mod tests {
     #[test]
     fn test_secrets_set_and_get() {
         let mut secrets = Secrets::new();
-        
+
         secrets.set("api_key", "secret123");
-        
+
         assert_eq!(secrets.get("api_key"), Some(&"secret123".to_string()));
         assert_eq!(secrets.get("nonexistent"), None);
     }
@@ -280,10 +290,10 @@ mod tests {
     #[test]
     fn test_secrets_remove() {
         let mut secrets = Secrets::new();
-        
+
         secrets.set("key1", "value1");
         assert_eq!(secrets.get("key1"), Some(&"value1".to_string()));
-        
+
         let removed = secrets.remove("key1");
         assert_eq!(removed, Some("value1".to_string()));
         assert_eq!(secrets.get("key1"), None);
@@ -292,7 +302,7 @@ mod tests {
     #[test]
     fn test_secrets_default() {
         let secrets = Secrets::default();
-        
+
         assert!(secrets.entries.is_empty());
         assert!(!secrets.encrypted);
     }
@@ -301,21 +311,21 @@ mod tests {
     fn test_secrets_serialization() {
         let mut secrets = Secrets::new();
         secrets.set("token", "abc123");
-        
+
         let json = serde_json::to_string(&secrets).unwrap();
         let deserialized: Secrets = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(secrets, deserialized);
     }
 
     // ========== MessageRole Tests ==========
-    
+
     #[test]
     fn test_message_role_serialization() {
         let role = MessageRole::User;
         let json = serde_json::to_string(&role).unwrap();
         assert_eq!(json, "\"user\"");
-        
+
         let deserialized: MessageRole = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, MessageRole::User);
     }

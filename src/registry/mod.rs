@@ -1,3 +1,12 @@
+//! # Unified Registry & Policy System
+//!
+//! The central store of agent metadata and the rules that govern them.
+//!
+//! - [`schema`] — serde definitions for agents and performance reports.
+//! - `RegistryService` — fuzzy and capability-based smart search over agents.
+//! - `PolicyEvaluator` — checks tool access (e.g. Bash, Write) against agent policies.
+//! - `WeightRegistry` — records behavioural stats to compute per-agent trust weights.
+
 pub mod schema;
 
 use crate::registry::schema::Registry;
@@ -8,9 +17,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 
-/// โหลดและคอมไพล์ Agent Schema เพียงครั้งเดียวเพื่อประสิทธิภาพ
-static AGENT_SCHEMA: Lazy<Option<JSONSchema>> = Lazy::new(|| {
-    let schema_path = ".config/schema-agent.json";
+/// Loads and compiles the capability JSON schema used to validate agents.
+static CAPABILITY_SCHEMA: Lazy<Option<JSONSchema>> = Lazy::new(|| {
+    let schema_path = "config/v1.7/capability-schema.json";
     if let Ok(content) = fs::read_to_string(schema_path) {
         if let Ok(schema_json) = serde_json::from_str(&content) {
             return JSONSchema::compile(&schema_json).ok();
@@ -42,8 +51,6 @@ impl RegistryService {
         Self { registry }
     }
 
-    /// ค้นหาเอเจนต์ที่เหมาะสมจากชื่อหรือความสามารถ (Capabilities)
-    /// รองรับการเปรียบเทียบเบื้องต้นเพื่อเตรียมพร้อมสำหรับ Semantic Search
     pub fn search_agents(&self, query: &str, fuzzy: bool) -> Vec<SearchResult> {
         if query.trim().is_empty() {
             return Vec::new();
@@ -53,17 +60,11 @@ impl RegistryService {
 
         for agent in &self.registry.agents {
             let mut score: f32 = 0.0;
-
-            // 1. Exact Match on Name
             if agent.name.to_lowercase() == query_lower {
                 score = 1.0;
-            }
-            // 2. Fuzzy Match on Name
-            else if fuzzy && agent.name.to_lowercase().contains(&query_lower) {
+            } else if fuzzy && agent.name.to_lowercase().contains(&query_lower) {
                 score = 0.8;
             }
-
-            // 3. Capability Match (พื้นฐานของ Semantic Search)
             for cap in &agent.capabilities {
                 if cap.to_lowercase() == query_lower {
                     score = score.max(0.9);
@@ -71,7 +72,6 @@ impl RegistryService {
                     score = score.max(0.7);
                 }
             }
-
             if score > 0.0 {
                 results.push(SearchResult {
                     id: agent.name.clone(),
@@ -85,10 +85,9 @@ impl RegistryService {
     }
 
     pub fn validate_agent_spec(&self, agent_json: &serde_json::Value) -> Result<()> {
-        if let Some(validator) = &*AGENT_SCHEMA {
-            // ระบุไทป์ชัดเจนเพื่อซ่อม E0282
+        if let Some(validator) = &*CAPABILITY_SCHEMA {
             if let Err(errors) = validator.validate(agent_json) {
-                let mut msg = String::from("Agent Spec Validation Failed:\n");
+                let mut msg = String::from("Agent Capability Validation Failed:\n");
                 for error in errors {
                     msg.push_str(&format!("- {}: {}\n", error.instance_path, error));
                 }
@@ -96,21 +95,17 @@ impl RegistryService {
             }
             Ok(())
         } else {
-            anyhow::bail!("Agent Schema validator not initialized")
+            anyhow::bail!("Capability Schema validator not initialized")
         }
     }
 
     pub fn registry(&self) -> &Registry {
         &self.registry
     }
-
-    pub fn search_keywords(&self, query: &str, fuzzy: bool) -> Vec<SearchResult> {
-        self.search_agents(query, fuzzy)
-    }
 }
 
 // ============================================================================
-// Policy & Security Layer
+// Policy & Security Layer (Gemini CLI Standard v1.7.5)
 // ============================================================================
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
@@ -123,40 +118,34 @@ pub enum PolicyDecision {
 
 pub struct PolicyEvaluator;
 impl PolicyEvaluator {
-    /// ประเมินความปลอดภัยโดยตรวจสอบจากสิทธิ์และเครื่องมือที่เรียกใช้
+    /// ประเมินความปลอดภัยตามมาตรฐาน Gemini CLI Policy Engine (Object-based lookup)
     pub fn evaluate(agent: &crate::config::AgentConfig, tool_name: &str, _args: &serde_json::Value) -> PolicyDecision {
-        // 1. ตรวจสอบเครื่องมืออันตราย (Dangerous Tools)
-        // ดึงจาก config หรือใช้ค่า default ที่ปลอดภัย
-        let dangerous_tools = ["rm", "format", "delete_all", "shred"];
-        if dangerous_tools.contains(&tool_name) && agent.permission < 900 {
-            return PolicyDecision::Deny;
-        }
+        // 1. O(1) Lookup สำหรับเครื่องมือที่เจาะจง หรือ '*' สำหรับเครื่องมือทั้งหมด
+        let decision_str = agent
+            .policies
+            .get(tool_name)
+            .or_else(|| agent.policies.get("*"))
+            .map(|s| s.as_str())
+            .unwrap_or("deny");
 
-        // 2. ตรวจสอบกฎจาก Permission Policy
-        if let Some(rules) = agent.permission_policy.get("decision_rules").and_then(|v| v.as_array()) {
-            for rule in rules {
-                let rule_tool = rule.get("toolName").and_then(|v| v.as_str()).unwrap_or("");
-                if rule_tool == "*" || rule_tool == tool_name {
-                    return match rule.get("decision").and_then(|v| v.as_str()).unwrap_or("deny") {
-                        "allow" => PolicyDecision::Allow,
-                        "ask_user" => PolicyDecision::AskUser,
-                        _ => PolicyDecision::Deny,
-                    };
-                }
-            }
-        }
+        let configured_decision = match decision_str {
+            "allow" => PolicyDecision::Allow,
+            "ask_user" => PolicyDecision::AskUser,
+            _ => PolicyDecision::Deny,
+        };
 
-        // 3. Fallback สำหรับเครื่องมือที่มีความเสี่ยงสูง
-        if tool_name == "bash" || tool_name == "write" {
+        // 2. Security Guard (Hardcoded Safety Rules)
+        let dangerous_tools = ["bash", "write", "rm", "shred"];
+        if agent.tier <= 2 && dangerous_tools.contains(&tool_name) && configured_decision == PolicyDecision::Allow {
             return PolicyDecision::AskUser;
         }
 
-        PolicyDecision::Allow
+        configured_decision
     }
 }
 
 // ============================================================================
-// Behavioral Stats Layer
+// Behavioral Stats Layer (Dynamic Measurement)
 // ============================================================================
 
 use crate::persistence::{Persistence, StorageLocation};
@@ -170,6 +159,8 @@ pub struct BehavioralStats {
     pub rule_violation_count: u32,
     pub bypassed_ask_user_count: u32,
     pub user_preference_score: f64,
+    pub approval_count: u32,
+    pub rejection_count: u32,
 }
 
 impl Default for BehavioralStats {
@@ -182,6 +173,8 @@ impl Default for BehavioralStats {
             rule_violation_count: 0,
             bypassed_ask_user_count: 0,
             user_preference_score: 0.5,
+            approval_count: 0,
+            rejection_count: 0,
         }
     }
 }
@@ -213,16 +206,30 @@ impl WeightRegistry {
         p.save_json(".omg/state/policy_metrics.json", &self.stats).await?;
         Ok(())
     }
+
+    pub fn record_user_interaction(&mut self, id: &str, approved: bool) {
+        let s = self.stats.entry(id.to_string()).or_default();
+        if approved {
+            s.approval_count += 1;
+            s.user_preference_score = (s.user_preference_score + 0.05).min(1.0);
+        } else {
+            s.rejection_count += 1;
+            s.user_preference_score = (s.user_preference_score - 0.10).max(0.0);
+        }
+    }
+
     pub fn record_result(&mut self, id: &str, success: bool) {
         let s = self.stats.entry(id.to_string()).or_default();
         s.total_count += 1;
         if success {
             s.success_count += 1;
             s.consecutive_errors = 0;
+            s.user_preference_score = (s.user_preference_score + 0.01).min(1.0);
         } else {
             s.consecutive_errors += 1;
         }
     }
+
     pub fn record_violation(&mut self, id: &str, vtype: ViolationType) {
         let s = self.stats.entry(id.to_string()).or_default();
         match vtype {
@@ -230,19 +237,21 @@ impl WeightRegistry {
             ViolationType::RuleBreak => s.rule_violation_count += 1,
             ViolationType::BypassedAskUser => s.bypassed_ask_user_count += 1,
         }
+        s.user_preference_score = (s.user_preference_score - 0.20).max(0.0);
     }
+
     pub fn get_trust_score(&self, id: &str) -> f64 {
         let s = match self.stats.get(id) {
             Some(v) => v,
             None => return 0.5,
         };
-        let base = if s.total_count == 0 {
+        let success_rate = if s.total_count == 0 {
             0.5
         } else {
             s.success_count as f64 / s.total_count as f64
         };
-        let penalty = (s.consecutive_errors as f64 * 0.1) + (s.hidden_error_count as f64 * 0.2);
-        (base * 0.4 + s.user_preference_score * 0.6 - penalty).clamp(0.0, 1.0)
+        let penalty = (s.consecutive_errors as f64 * 0.15) + (s.hidden_error_count as f64 * 0.3);
+        (success_rate * 0.3 + s.user_preference_score * 0.7 - penalty).clamp(0.0, 1.0)
     }
 }
 

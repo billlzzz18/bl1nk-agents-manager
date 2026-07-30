@@ -66,7 +66,23 @@ impl AgentRouter {
             capable_agents = registry.list_agent_ids();
         }
 
-        let selected_id = capable_agents.first().context("No agents available")?;
+        // --- 🧠 DYNAMIC WEIGHTING LOGIC ---
+        let weight_registry = crate::registry::WeightRegistry::load().await.unwrap_or_default();
+
+        let mut scored_agents: Vec<(String, f64)> = capable_agents
+            .into_iter()
+            .filter_map(|id| {
+                registry.get_agent_state(&id).map(|state| {
+                    let trust_score = weight_registry.get_trust_score(&id);
+                    let effective_priority = state.config.priority as f64 * trust_score;
+                    (id, effective_priority)
+                })
+            })
+            .collect();
+
+        scored_agents.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let (selected_id, _score) = scored_agents.first().context("No agents available after scoring")?;
         let state = registry.get_agent_state(selected_id).context("Agent not found")?;
 
         Ok(PlanProposal {
@@ -74,12 +90,12 @@ impl AgentRouter {
             agent_id: selected_id.clone(),
             agent_name: state.config.name.clone(),
             reasoning: format!(
-                "Selected based on task type '{}' and smart capability matching.",
-                task_type
+                "Selected agent '{}' based on task type '{}' and a dynamic trust score (Effective Priority: {:.2}).",
+                state.config.name, task_type, _score
             ),
             cost_category: CostCategory::Standard,
             availability: "Ready".to_string(),
-            capable_agents,
+            capable_agents: scored_agents.into_iter().map(|(id, _)| id).collect(),
         })
     }
 }
@@ -87,28 +103,26 @@ impl AgentRouter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{AgentConfig, AgentToolPermissions, RateLimit, RoutingConfig, RoutingTier};
+    use crate::config::{AgentConfig, RateLimit, RoutingConfig, RoutingTier};
+    use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_router_basic() {
+        let mut policies = HashMap::new();
+        policies.insert("test".to_string(), "allow".to_string());
+
         let agent = AgentConfig {
             id: "test".into(),
             name: "Test Agent".into(),
+            version: "1.0.0".into(),
             description: "desc".into(),
             mode: "subagent".into(),
             agent_type: "general".into(),
-            model: "sonnet".into(),
             capabilities: vec!["test".into()],
+            tier: 2,
             priority: 100,
+            policies,
             enabled: true,
-            tool: AgentToolPermissions {
-                bash: false,
-                write: false,
-                skill: true,
-                ask: true,
-            },
-            permission: 100,
-            permission_policy: serde_json::json!({}),
             command: "true".into(),
             args: None,
             extension_name: None,

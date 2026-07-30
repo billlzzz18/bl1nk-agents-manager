@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Agent Policy Specification",
+  "description": "Schema for validating agent permissions and policies (v1.7.5.1). Based on Gemini CLI and KiloCode standards.",
+  "version": "1.7.5.1",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "last_updated": { "type": "string", "format": "date-time" },
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+          "source": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "enum": ["builtin", "git", "local", "url"] },
+              "path": { "type": "string" },
+              "url": { "type": "string" },
+              "ref_name": { "type": "string" }
+            },
+            "required": ["type"]
+          },
+          "type": { "type": "string" },
+          "tier": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "priority": { "type": "integer", "minimum": 0, "maximum": 999 },
+          "policies": {
+            "type": "object",
+            "properties": {
+              "tools": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": ["allow", "deny", "ask_user"]
+                }
+              }
+            },
+            "required": ["tools"]
+          },
+          "capabilities": { "type": "array", "items": { "type": "string" } },
+          "color": { "type": "string" }
+        },
+        "required": ["name", "version", "source", "tier", "priority", "policies"]
+      }
+    }
+  },
+  "required": ["version", "agents"]
+}
